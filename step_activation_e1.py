@@ -121,13 +121,4 @@ if __name__ == "__main__":
             )
         )
 
-    with open(f"log_{n}.txt", "w") as fout:
-        for x0, h0, ratio, error in res:
-            fout.write(
-                f"x0 = {x0: .4f}, \
-                    h0 = {h0: .4f}, \
-                    ratio = {ratio: .4f}, \
-                    error = {error: .4f}\n"
-            )
-
     print(f"Ratio = {min([ratio-error for _, _, ratio, error in res]): .4f}")
