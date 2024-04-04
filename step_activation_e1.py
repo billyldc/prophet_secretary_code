@@ -1,37 +1,9 @@
 import numpy as np
-from scipy.optimize import minimize, NonlinearConstraint
+from numpy import exp
+from scipy.optimize import minimize, NonlinearConstraint, LinearConstraint
 from tqdm import tqdm
 from multiprocess import Pool
 import sys
-from numpy import exp
-
-
-def refined_RCRS(x: float) -> float:
-
-    def objective(g: np.ndarray) -> float:
-        Gamma = g[0]
-        return Gamma
-
-    def constr_ratio(g: np.ndarray) -> np.ndarray:
-        Gamma = g[0]
-        a = g[1]
-        t = 1 - x
-        ea = np.exp(-t*a)
-        e1 = np.exp(-t)
-        T1 = (1-e1)/t - x * e1 * (1-a)**2 * approx((1-a)*t)
-        T2 = (ea - e1) / t
-        return [Gamma - T1, Gamma - T2]
-
-    res = minimize(
-        objective,
-        x0=[1., .5],
-        bounds=[(0.5, 1.0), (0.0, 1.0)],
-        constraints=[
-            NonlinearConstraint(constr_ratio, lb=0.0, ub=np.inf)
-        ]
-    )
-
-    return res.fun
 
 
 def approx(x: float) -> float:
@@ -40,17 +12,13 @@ def approx(x: float) -> float:
         return 1 / 2 + x / 6 + x**2 / 24 + x**3 / 24
     else:
         return (exp(x) - 1 - x) / x**2
-      
+
 
 def optimize_two_stage(s, x0, h0, h_ot):
 
     def objective(args: np.ndarray) -> float:
-        Gamma, a, b, c = args
+        Gamma = args[0]
         return -Gamma
-
-    def constr_time(args: np.ndarray) -> np.ndarray:
-        Gamma, a, b, c = args
-        return [b - a, c - b]
 
     def constr_ratio(args: np.ndarray) -> np.ndarray:
         Gamma, a, b, c = args
@@ -60,11 +28,11 @@ def optimize_two_stage(s, x0, h0, h_ot):
         ec = exp(-c * h_ot - s * (c - b) * (1 - x0 - h_ot))
         e1 = exp(-h_ot - s * (1 - b) * (1 - x0 - h_ot))
 
-        w = h_ot  # slope of K(t)
+        w = h_ot    # slope of K(t)
         I0 = (1 - ea) / w
         J0 = I0
 
-        t = h0  # slope of L(t)
+        t = h0      # slope of L(t)
         I1 = (ea - eb) / w
         J1 = I1 - t * eb * (b-a)**2 * approx((b-a)*h_ot)
 
@@ -85,10 +53,11 @@ def optimize_two_stage(s, x0, h0, h_ot):
     res = minimize(
         objective,
         x0=[0.5, 0.1, 0.2, 0.3],
-        bounds=[(0.5, 0.8), (0.0, 0.5), (0.0, 0.6), (0.0, 1.0)],
+        bounds=[(0.5, 1.), (0.0, 0.5), (0.0, 0.6), (0.0, 1.0)],
         constraints=[
-            NonlinearConstraint(constr_time, lb=0.0, ub=np.inf),
-            NonlinearConstraint(constr_ratio, lb=0.0, ub=np.inf),
+            LinearConstraint([0, -1, 1, 0], lb=0., ub=np.inf),  # b >= a
+            LinearConstraint([0, 0, -1, 1], lb=0., ub=np.inf),  # c >= b
+            NonlinearConstraint(constr_ratio, lb=0., ub=np.inf),
         ],
     )
 
@@ -109,11 +78,23 @@ def compute_h(x: float, s: float) -> float:
         return -obj
 
     res = minimize(objective, x0=[x / 2], bounds=[(0, x)])
+
     return -res.fun
 
 
 def compute_ratio(x0: float, h0: float, eps) -> float:
-    s = 2.0
+
+    # Use the following choices of s for the 0.688 ratio
+    # if x0 < 0.35:
+    #     s = 3.
+    # elif x0 < 0.6:
+    #     s = 2.5
+    # else:
+    #     s = 2.
+
+    # Use this fixed choice of s for the 0.686 ratio
+    s = 2.
+
     h = compute_h(x0, s)
     h_ot = min(h - h0, 1 - x0)
     ratio = optimize_two_stage(s, x0, h0, h_ot)
@@ -140,7 +121,7 @@ if __name__ == "__main__":
             )
         )
 
-    with open("log.txt", "w") as fout:
+    with open(f"log_{n}.txt", "w") as fout:
         for x0, h0, ratio, error in res:
             fout.write(
                 f"x0 = {x0: .4f}, \
